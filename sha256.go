@@ -97,3 +97,63 @@ func SHA256(data []byte) (result [32]byte, err error) {
 	}
 	return hash.Sum()
 }
+
+type SHA224Hash struct {
+	ctx    C.EVP_MD_CTX
+	engine *Engine
+}
+
+func NewSHA224Hash() (*SHA224Hash, error) { return NewSHA224HashWithEngine(nil) }
+
+func NewSHA224HashWithEngine(e *Engine) (*SHA224Hash, error) {
+	hash := &SHA224Hash{engine: e}
+	C.EVP_MD_CTX_init(&hash.ctx)
+	runtime.SetFinalizer(hash, func(hash *SHA224Hash) { hash.Close() })
+	if err := hash.Reset(); err != nil {
+		return nil, err
+	}
+	return hash, nil
+}
+
+func (s *SHA224Hash) Close() {
+	C.EVP_MD_CTX_cleanup(&s.ctx)
+}
+
+func (s *SHA224Hash) Reset() error {
+	if 1 != C.EVP_DigestInit_ex(&s.ctx, C.EVP_sha224(), engineRef(s.engine)) {
+		return errors.New("openssl: sha224: cannot init digest ctx")
+	}
+	return nil
+}
+
+func (s *SHA224Hash) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if 1 != C._avoid_cgoCheckPointer_EVP_DigestUpdate(&s.ctx,
+		C.uintptr_t(uintptr(unsafe.Pointer(&p[0]))),
+		C.size_t(len(p))) {
+		return 0, errors.New("openssl: sha224: cannot update digest")
+	}
+	return len(p), nil
+}
+
+func (s *SHA224Hash) Sum() (result [28]byte, err error) {
+	if 1 != C.EVP_DigestFinal_ex(&s.ctx,
+		(*C.uchar)(unsafe.Pointer(&result[0])), nil) {
+		return result, errors.New("openssl: sha224: cannot finalize ctx")
+	}
+	return result, s.Reset()
+}
+
+func SHA224(data []byte) (result [28]byte, err error) {
+	hash, err := NewSHA224Hash()
+	if err != nil {
+		return result, err
+	}
+	defer hash.Close()
+	if _, err := hash.Write(data); err != nil {
+		return result, err
+	}
+	return hash.Sum()
+}
